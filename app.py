@@ -1,7 +1,7 @@
 
 import os
 import numpy as np
-import faiss
+from sklearn.metrics.pairwise import cosine_similarity
 import streamlit as st
 
 from google import genai
