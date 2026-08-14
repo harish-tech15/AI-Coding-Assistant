@@ -1,15 +1,15 @@
 import os
+import requests
 import numpy as np
 import streamlit as st
 
-from google import genai
 from pypdf import PdfReader
 from sentence_transformers import SentenceTransformer
 from sklearn.metrics.pairwise import cosine_similarity
 
 
 # =========================================================
-# PAGE CONFIGURATION
+# PAGE CONFIG
 # =========================================================
 
 st.set_page_config(
@@ -28,14 +28,60 @@ API_KEY = os.getenv("GEMINI_API_KEY")
 if not API_KEY:
     st.error("❌ GEMINI_API_KEY is not configured.")
     st.info(
-        "Add GEMINI_API_KEY in Streamlit Cloud → "
-        "Manage app → Settings → Secrets."
+        "Go to Streamlit → Manage app → Settings → Secrets "
+        "and add GEMINI_API_KEY."
     )
     st.stop()
 
-client = genai.Client(
-    api_key=API_KEY
-)
+
+def ask_gemini(prompt):
+
+    url = (
+        "https://generativelanguage.googleapis.com/"
+        "v1beta/models/gemini-3.1-flash-lite:generateContent"
+    )
+
+    headers = {
+        "Content-Type": "application/json",
+        "x-goog-api-key": API_KEY
+    }
+
+    data = {
+        "contents": [
+            {
+                "parts": [
+                    {
+                        "text": prompt
+                    }
+                ]
+            }
+        ]
+    }
+
+    try:
+
+        response = requests.post(
+            url,
+            headers=headers,
+            json=data,
+            timeout=60
+        )
+
+        if response.status_code != 200:
+
+            return (
+                f"❌ Gemini API Error "
+                f"({response.status_code}):\n\n"
+                f"{response.text}"
+            )
+
+        result = response.json()
+
+        return result["candidates"][0]["content"]["parts"][0]["text"]
+
+    except Exception as e:
+
+        return f"❌ Error: {str(e)}"
 
 
 # =========================================================
@@ -50,60 +96,31 @@ def load_embedding_model():
     )
 
 
-embedding_model = load_embedding_model()
-
-
 # =========================================================
-# GEMINI FUNCTION
-# =========================================================
-
-def ask_gemini(prompt):
-
-    try:
-
-        response = client.models.generate_content(
-            model="gemini-3.1-flash-lite",
-            contents=prompt
-        )
-
-        return response.text
-
-    except Exception as e:
-
-        return f"❌ Gemini API Error: {str(e)}"
-
-
-# =========================================================
-# PDF TEXT EXTRACTION
+# PDF EXTRACTION
 # =========================================================
 
 def extract_pdf_text(uploaded_file):
 
-    try:
+    reader = PdfReader(
+        uploaded_file
+    )
 
-        reader = PdfReader(
-            uploaded_file
-        )
+    text = ""
 
-        text = ""
+    for page in reader.pages:
 
-        for page in reader.pages:
+        page_text = page.extract_text()
 
-            page_text = page.extract_text()
+        if page_text:
 
-            if page_text:
+            text += page_text + "\n"
 
-                text += page_text + "\n"
-
-        return text
-
-    except Exception as e:
-
-        return f"PDF extraction error: {str(e)}"
+    return text
 
 
 # =========================================================
-# TEXT CHUNKING
+# CHUNKING
 # =========================================================
 
 def create_chunks(
@@ -114,17 +131,13 @@ def create_chunks(
 
     chunks = []
 
-    if not text.strip():
-
-        return chunks
-
     start = 0
 
     while start < len(text):
 
-        end = start + chunk_size
-
-        chunk = text[start:end].strip()
+        chunk = text[
+            start:start + chunk_size
+        ].strip()
 
         if chunk:
 
@@ -136,47 +149,40 @@ def create_chunks(
 
 
 # =========================================================
-# CREATE VECTOR DATABASE
+# VECTOR DATABASE
 # =========================================================
 
-def create_vector_database(chunks):
+def create_vector_database(
+    chunks,
+    model
+):
 
-    embeddings = embedding_model.encode(
+    embeddings = model.encode(
         chunks,
         convert_to_numpy=True
     )
 
-    embeddings = np.asarray(
+    return np.asarray(
         embeddings,
         dtype=np.float32
     )
 
-    return embeddings
-
 
 # =========================================================
-# DOCUMENT SEARCH
+# SEARCH
 # =========================================================
 
 def search_document(
     question,
     chunks,
     embeddings,
+    model,
     k=3
 ):
 
-    if not chunks:
-
-        return []
-
-    query_embedding = embedding_model.encode(
+    query_embedding = model.encode(
         [question],
         convert_to_numpy=True
-    )
-
-    query_embedding = np.asarray(
-        query_embedding,
-        dtype=np.float32
     )
 
     similarities = cosine_similarity(
@@ -184,24 +190,14 @@ def search_document(
         embeddings
     )[0]
 
-    k = min(
-        k,
-        len(chunks)
-    )
-
     top_indices = np.argsort(
         similarities
     )[-k:][::-1]
 
-    results = []
-
-    for index in top_indices:
-
-        results.append(
-            chunks[index]
-        )
-
-    return results
+    return [
+        chunks[i]
+        for i in top_indices
+    ]
 
 
 # =========================================================
@@ -211,17 +207,14 @@ def search_document(
 st.title("🤖 AI Coding Assistant")
 
 st.write(
-    "A Generative AI application built with "
-    "Google Gemini, RAG, Sentence Transformers "
-    "and Streamlit."
+    "Generative AI Coding Assistant using "
+    "Gemini + RAG + Streamlit"
 )
 
 
 # =========================================================
 # SIDEBAR
 # =========================================================
-
-st.sidebar.title("🛠️ AI Tools")
 
 mode = st.sidebar.selectbox(
     "Choose Mode",
@@ -234,7 +227,7 @@ mode = st.sidebar.selectbox(
 
 
 # =========================================================
-# MODE 1 — CODE GENERATION
+# CODE GENERATOR
 # =========================================================
 
 if mode == "💻 Generate Code":
@@ -242,10 +235,10 @@ if mode == "💻 Generate Code":
     st.header("💻 Python Code Generator")
 
     request = st.text_area(
-        "What code do you want?",
+        "Describe what you want to build",
         placeholder=(
-            "Example: Create a Python function "
-            "to check whether a number is prime."
+            "Create a Python function to check "
+            "whether a number is prime."
         ),
         height=150
     )
@@ -258,7 +251,7 @@ if mode == "💻 Generate Code":
         if not request.strip():
 
             st.warning(
-                "Please enter your requirement."
+                "Please enter a requirement."
             )
 
         else:
@@ -266,22 +259,21 @@ if mode == "💻 Generate Code":
             prompt = f"""
 You are an expert Python developer.
 
-Generate clean, correct and beginner-friendly
-Python code.
+Generate clean and correct Python code.
 
-USER REQUIREMENT:
+Requirement:
 {request}
 
-Your response must contain:
+Provide:
 
-1. Python Code
+1. Python code
 2. Explanation
-3. Example Usage
-4. Time Complexity
+3. Example usage
+4. Time complexity
 """
 
             with st.spinner(
-                "🤖 Generating code..."
+                "🤖 Generating..."
             ):
 
                 answer = ask_gemini(
@@ -296,7 +288,7 @@ Your response must contain:
 
 
 # =========================================================
-# MODE 2 — CODE DEBUGGING
+# DEBUGGER
 # =========================================================
 
 elif mode == "🐞 Debug Code":
@@ -304,9 +296,7 @@ elif mode == "🐞 Debug Code":
     st.header("🐞 Python Code Debugger")
 
     code = st.text_area(
-        "Paste your Python code here:",
-        placeholder="""numbers = [1, 2, 3]
-print(numbers[5])""",
+        "Paste your Python code",
         height=300
     )
 
@@ -318,7 +308,7 @@ print(numbers[5])""",
         if not code.strip():
 
             st.warning(
-                "Please paste your Python code."
+                "Please paste Python code."
             )
 
         else:
@@ -326,23 +316,21 @@ print(numbers[5])""",
             prompt = f"""
 You are an expert Python debugger.
 
-Analyze the following Python code.
-
-CODE:
+Analyze this code:
 
 {code}
 
 Provide:
 
-1. Identify the error
-2. Explain why the error occurs
-3. Corrected Python code
-4. Explanation of the corrected code
-5. Suggestions for improvement
+1. Error
+2. Reason
+3. Corrected code
+4. Explanation
+5. Improvements
 """
 
             with st.spinner(
-                "🔍 Analyzing code..."
+                "🔍 Debugging..."
             ):
 
                 answer = ask_gemini(
@@ -357,78 +345,48 @@ Provide:
 
 
 # =========================================================
-# MODE 3 — PDF RAG
+# PDF RAG
 # =========================================================
 
-elif mode == "📄 Ask PDF":
+else:
 
     st.header(
         "📄 Chat with Your PDF"
     )
 
     uploaded_file = st.file_uploader(
-        "Upload a PDF document",
+        "Upload PDF",
         type=["pdf"]
     )
 
     if uploaded_file:
 
-        st.info(
-            f"📄 File: {uploaded_file.name}"
-        )
-
-        if "pdf_name" not in st.session_state:
-
-            st.session_state.pdf_name = None
-
-        if (
-            st.session_state.pdf_name
-            != uploaded_file.name
+        with st.spinner(
+            "📚 Processing PDF..."
         ):
 
-            with st.spinner(
-                "📚 Processing PDF..."
-            ):
+            text = extract_pdf_text(
+                uploaded_file
+            )
 
-                text = extract_pdf_text(
-                    uploaded_file
-                )
+            chunks = create_chunks(
+                text
+            )
 
-                chunks = create_chunks(
-                    text
-                )
+            model = load_embedding_model()
 
-                if not chunks:
-
-                    st.error(
-                        "❌ Could not extract text from PDF."
-                    )
-
-                    st.stop()
-
-                embeddings = create_vector_database(
-                    chunks
-                )
-
-                st.session_state.pdf_chunks = chunks
-                st.session_state.pdf_embeddings = embeddings
-                st.session_state.pdf_name = uploaded_file.name
-
-        else:
-
-            chunks = st.session_state.pdf_chunks
-            embeddings = st.session_state.pdf_embeddings
+            embeddings = create_vector_database(
+                chunks,
+                model
+            )
 
         st.success(
-            f"✅ PDF processed successfully — "
+            f"✅ PDF processed — "
             f"{len(chunks)} chunks created."
         )
 
         question = st.text_input(
-            "Ask a question about the PDF:",
-            placeholder=(
-                "Example: What is this document about?"
-            )
+            "Ask a question about the PDF"
         )
 
         if st.button(
@@ -445,41 +403,39 @@ elif mode == "📄 Ask PDF":
             else:
 
                 with st.spinner(
-                    "🔎 Searching document..."
+                    "🔎 Searching..."
                 ):
 
-                    relevant_chunks = search_document(
+                    results = search_document(
                         question,
                         chunks,
                         embeddings,
-                        k=3
+                        model
                     )
 
                 context = "\n\n".join(
-                    relevant_chunks
+                    results
                 )
 
                 prompt = f"""
 You are an AI document assistant.
 
-Answer the user's question using ONLY
-the provided document context.
+Use ONLY the following document context
+to answer the question.
 
 DOCUMENT CONTEXT:
 
 {context}
 
-USER QUESTION:
+QUESTION:
 
 {question}
 
-Rules:
+If the answer is not present in the
+document, say:
 
-- Answer clearly and accurately.
-- Do not invent information.
-- If the answer is not present in the
-  document, say:
-  "The answer is not available in the uploaded document."
+"The answer is not available in
+the uploaded document."
 """
 
                 with st.spinner(
@@ -497,11 +453,11 @@ Rules:
                 st.markdown(answer)
 
                 with st.expander(
-                    "📚 View Retrieved Context"
+                    "📚 Retrieved Context"
                 ):
 
-                    for i, chunk in enumerate(
-                        relevant_chunks,
+                    for i, result in enumerate(
+                        results,
                         1
                     ):
 
@@ -509,17 +465,6 @@ Rules:
                             f"**Context {i}**"
                         )
 
-                        st.write(chunk)
+                        st.write(result)
 
                         st.divider()
-
-
-# =========================================================
-# FOOTER
-# =========================================================
-
-st.sidebar.divider()
-
-st.sidebar.caption(
-    "Built with Python + Gemini + RAG + Streamlit"
-)
