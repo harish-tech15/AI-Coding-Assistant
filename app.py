@@ -3,10 +3,6 @@ import requests
 import streamlit as st
 
 
-# =========================================================
-# PAGE CONFIG
-# =========================================================
-
 st.set_page_config(
     page_title="AI Coding Assistant",
     page_icon="🤖",
@@ -14,24 +10,13 @@ st.set_page_config(
 )
 
 
-# =========================================================
-# GEMINI API KEY
-# =========================================================
-
 API_KEY = os.getenv("GEMINI_API_KEY")
+
 
 if not API_KEY:
     st.error("❌ GEMINI_API_KEY is missing.")
-    st.info(
-        "Go to Streamlit → Manage app → Settings → Secrets "
-        "and add your Gemini API key."
-    )
     st.stop()
 
-
-# =========================================================
-# GEMINI FUNCTION
-# =========================================================
 
 def ask_gemini(prompt):
 
@@ -67,7 +52,6 @@ def ask_gemini(prompt):
         )
 
         if response.status_code != 200:
-
             return (
                 f"❌ Gemini API Error: "
                 f"{response.status_code}\n\n"
@@ -83,9 +67,9 @@ def ask_gemini(prompt):
         return f"❌ Error: {str(e)}"
 
 
-# =========================================================
-# TITLE
-# =========================================================
+# ---------------------------------------------------------
+# HEADER
+# ---------------------------------------------------------
 
 st.title("🤖 AI Coding Assistant")
 
@@ -94,9 +78,9 @@ st.write(
 )
 
 
-# =========================================================
+# ---------------------------------------------------------
 # SIDEBAR
-# =========================================================
+# ---------------------------------------------------------
 
 st.sidebar.title("🛠️ AI Tools")
 
@@ -109,9 +93,9 @@ mode = st.sidebar.radio(
 )
 
 
-# =========================================================
+# ---------------------------------------------------------
 # CODE GENERATOR
-# =========================================================
+# ---------------------------------------------------------
 
 if mode == "💻 Code Generator":
 
@@ -146,6 +130,7 @@ Generate clean, beginner-friendly and
 correct Python code.
 
 User requirement:
+
 {requirement}
 
 Give the answer in this format:
@@ -160,9 +145,7 @@ Give the answer in this format:
                 "🤖 Generating code..."
             ):
 
-                answer = ask_gemini(
-                    prompt
-                )
+                answer = ask_gemini(prompt)
 
             st.subheader(
                 "🤖 AI Response"
@@ -171,9 +154,9 @@ Give the answer in this format:
             st.markdown(answer)
 
 
-# =========================================================
+# ---------------------------------------------------------
 # CODE DEBUGGER
-# =========================================================
+# ---------------------------------------------------------
 
 else:
 
@@ -181,8 +164,10 @@ else:
 
     code = st.text_area(
         "Paste your Python code:",
-        placeholder="""numbers = [1, 2, 3]
-print(numbers[5])""",
+        placeholder=(
+            "numbers = [1, 2, 3]\n"
+            "print(numbers[5])"
+        ),
         height=300
     )
 
@@ -204,18 +189,36 @@ You are an expert Python debugger.
 
 Analyze this Python code:
 
-```python
 {code}
-     with st.spinner(
-         "🔍 Analyzing code..."
-     ):
 
-         answer = ask_gemini(
-             prompt
-         )
+Provide:
 
-     st.subheader(
-         "🐞 Debug Result"
-     )
+1. Identify the error
+2. Explain why it happens
+3. Corrected Python code
+4. Explanation of the correction
+5. Suggestions for improvement
+"""
 
-     st.markdown(answer)
+            with st.spinner(
+                "🔍 Analyzing code..."
+            ):
+
+                answer = ask_gemini(prompt)
+
+            st.subheader(
+                "🐞 Debug Result"
+            )
+
+            st.markdown(answer)
+
+
+# ---------------------------------------------------------
+# FOOTER
+# ---------------------------------------------------------
+
+st.sidebar.divider()
+
+st.sidebar.caption(
+    "Built with Python + Gemini + Streamlit 🚀"
+)
