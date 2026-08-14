@@ -1,6 +1,0 @@
-streamlit
-requests
-pypdf
-sentence-transformers
-scikit-learn
-numpy
