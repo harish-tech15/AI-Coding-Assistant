@@ -1,5 +1,5 @@
 streamlit
-google-genai
+google-genai==1.33.0
 pypdf
 sentence-transformers
 scikit-learn
