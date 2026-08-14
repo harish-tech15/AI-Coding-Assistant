@@ -3,8 +3,7 @@ import requests
 import numpy as np
 import streamlit as st
 
-from pypdf import PdfReader
-from sentence_transformers import SentenceTransformer
+
 from sklearn.metrics.pairwise import cosine_similarity
 
 
